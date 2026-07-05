@@ -457,6 +457,20 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:48px 40p
 .footer-bottom{border-top:1px solid var(--border);padding-top:22px;display:flex;justify-content:space-between;align-items:center}
 .footer-bottom p{color:var(--muted);font-size:.82em}
 
+/* 4-BIT QUANTIZATION */
+.quant-compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
+.quant-col{border-radius:10px;padding:16px;border:1px solid}
+.quant-full{border-color:var(--border2);background:rgba(255,255,255,.02)}
+.quant-4bit{border-color:rgba(118,185,0,.3);background:rgba(118,185,0,.04)}
+.quant-label{font-size:.75em;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.quant-full .quant-label{color:var(--muted)}
+.quant-4bit .quant-label{color:var(--accent)}
+.quant-build{background:var(--bg3);border-radius:8px;padding:10px 14px;margin-top:10px;font-size:.83em;color:var(--muted);line-height:1.6}
+.quant-build strong{color:var(--white)}
+.quant-savings{display:inline-block;background:rgba(118,185,0,.12);border:1px solid rgba(118,185,0,.25);color:var(--accent);border-radius:6px;padding:2px 9px;font-size:.75em;font-weight:700;margin-left:8px}
+.quant-note{background:linear-gradient(135deg,rgba(118,185,0,.07),rgba(118,185,0,.03));border:1px solid rgba(118,185,0,.25);border-left:4px solid var(--accent);border-radius:12px;padding:22px 26px;margin-top:24px}
+.quant-note p{color:var(--muted);font-size:.91em;line-height:1.8}
+
 /* TECH BADGES */
 .tech-grid{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
 .tech-badge{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 20px;font-size:.88em;color:var(--text);font-weight:600;transition:border-color .2s,transform .2s,color .2s}
@@ -479,6 +493,8 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:48px 40p
   main{padding:0 14px 120px}
 }
 @media(max-width:600px){
+  .quant-compare{grid-template-columns:1fr}
+
   header .hdr-cta{display:none}
   .hero-title{font-size:1.75em}
   .stats-bar{grid-template-columns:1fr 1fr}
@@ -760,6 +776,96 @@ def index():
           <div style="margin-top:12px">{wa_b}</div>
         </div>''')
     P.append('</section>')
+
+    # ── 4-BIT QUANTIZATION ──
+    P.append('''
+    <section id="quantized" class="fade-in">
+      <div class="sec-label">Budget-Friendly Option</div>
+      <div class="sec-title">Lower-Cost Option: 4-Bit Quantized Large Models</div>
+      <p class="sec-sub">Run very large models on significantly less hardware — a practical path for teams with budget constraints.</p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:28px">
+        <div class="explainer-box">
+          <h4>&#128190; Why Full Precision Needs So Much VRAM</h4>
+          <p>By default, large model weights are stored in 16-bit floating point. A 405B parameter model needs roughly 486 GB of VRAM just to load — requiring many high-end GPUs and significant cost.</p>
+        </div>
+        <div class="explainer-box">
+          <h4>&#9889; What 4-Bit Quantization Does</h4>
+          <p>Quantization compresses each model weight from 16 bits down to 4 bits. The same model now fits in roughly half the VRAM. Accuracy and speed may be slightly reduced, but the model remains highly capable for most tasks.</p>
+        </div>
+        <div class="explainer-box">
+          <h4>&#128200; When to Use It</h4>
+          <p>4-bit is ideal for testing, demos, internal tools, and inference workloads where absolute peak quality is not required. For production training or maximum accuracy, full precision is still recommended.</p>
+        </div>
+      </div>
+
+      <div class="model-card">
+        <h3 style="color:var(--white)">Meta Llama 3.1 405B — Full vs 4-Bit</h3>
+        <p style="color:var(--muted);font-size:.87em">Meta&#39;s flagship open-source model. GPT-4 class performance.</p>
+        <div class="quant-compare">
+          <div class="quant-col quant-full">
+            <div class="quant-label">Full Precision (16-bit)</div>
+            <div class="mem-calc">
+              <strong style="color:var(--muted)">Memory Calculation:</strong><br>
+              405 B &times; 1 GB = 405 GB raw weight<br>
+              405 GB &times; 1.2 overhead = <span style="color:var(--text);font-weight:700">486 GB minimum VRAM</span>
+            </div>
+            <div class="quant-build">
+              <strong>Example build:</strong> 4&times; H200 141 GB = 564 GB<br>
+              <span style="color:var(--muted)">GPU cost: ~$176,000</span>
+            </div>
+          </div>
+          <div class="quant-col quant-4bit">
+            <div class="quant-label">4-Bit Quantized <span class="quant-savings">&#9660; 50% VRAM</span></div>
+            <div class="mem-calc">
+              <strong style="color:var(--accent)">Memory Calculation:</strong><br>
+              405 B &times; 0.5 GB = 202.5 GB compressed<br>
+              202.5 GB &times; 1.2 overhead = <span class="mem-result">243 GB minimum VRAM</span>
+            </div>
+            <div class="quant-build">
+              <strong>Lower-cost build:</strong> 4&times; H100 80 GB = 320 GB<br>
+              <span style="color:var(--accent)">GPU cost: ~$128,000 &mdash; saves ~$48,000</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="model-card" style="margin-top:14px">
+        <h3 style="color:var(--white)">DeepSeek-V2 236B — Full vs 4-Bit</h3>
+        <p style="color:var(--muted);font-size:.87em">Mixture-of-Experts design. Efficient and highly capable for code and reasoning.</p>
+        <div class="quant-compare">
+          <div class="quant-col quant-full">
+            <div class="quant-label">Full Precision (16-bit)</div>
+            <div class="mem-calc">
+              <strong style="color:var(--muted)">Memory Calculation:</strong><br>
+              236 B &times; 1 GB = 236 GB raw weight<br>
+              236 GB &times; 1.2 overhead = <span style="color:var(--text);font-weight:700">284 GB minimum VRAM</span>
+            </div>
+            <div class="quant-build">
+              <strong>Example build:</strong> 2&times; H200 141 GB = 282 GB (just fits) or 4&times; H100<br>
+              <span style="color:var(--muted)">GPU cost: ~$88,000&ndash;$128,000</span>
+            </div>
+          </div>
+          <div class="quant-col quant-4bit">
+            <div class="quant-label">4-Bit Quantized <span class="quant-savings">&#9660; 50% VRAM</span></div>
+            <div class="mem-calc">
+              <strong style="color:var(--accent)">Memory Calculation:</strong><br>
+              236 B &times; 0.5 GB = 118 GB compressed<br>
+              118 GB &times; 1.2 overhead = <span class="mem-result">142 GB minimum VRAM</span>
+            </div>
+            <div class="quant-build">
+              <strong>Lower-cost build:</strong> 2&times; H100 80 GB = 160 GB<br>
+              <span style="color:var(--accent)">GPU cost: ~$64,000 &mdash; saves ~$24,000&ndash;$64,000</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quant-note">
+        <p><strong style="color:var(--white)">&#128172; A note for customers considering quantization:</strong></p>
+        <p style="margin-top:8px">For customers who want to experiment with very large models but cannot afford full precision hardware, 4-bit quantized models are the budget-friendly path. I would recommend full precision for maximum quality, but 4-bit is a smart lower-cost option for testing and many inference workloads. It lets smaller teams access frontier-class models without frontier-class hardware budgets.</p>
+      </div>
+    </section>''')
 
     # ── CLUSTER VIZ ──
     P.append(f'''
