@@ -492,7 +492,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:48px 40p
 <header>
   <div>
     <div class="brand-logo">&#9889; Maria's AI Hardware Store</div>
-    <div class="brand-tag">Enterprise AI Infrastructure &amp; GPU Solutions</div>
+    <div class="brand-tag">Enterprise AI Infrastructure &bull; GPU Clusters &bull; NVIDIA Solutions</div>
   </div>
   <a class="hdr-cta" href="#contact">Contact Our Team</a>
 </header>
@@ -504,7 +504,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:48px 40p
   <a href="#builds">Builds</a>
   <a href="#about">About</a>
   <a href="#contact">Contact</a>
-  <a href="/quote">Get a Quote</a>
+  <a href="/quote">Request a Solution Quote</a>
   <a href="/requests">Requests</a>
 </nav>
 <a class="wa-float" href="https://wa.me/17862134550?text=Hello%2C%20I%27m%20interested%20in%20learning%20more%20about%20your%20AI%20hardware%20solutions.%20Could%20someone%20from%20your%20team%20help%20me%20choose%20the%20right%20configuration%3F" target="_blank" rel="noopener">
@@ -519,7 +519,7 @@ HTML_FOOTER = """
     <div class="footer-grid">
       <div class="footer-brand">
         <div class="footer-logo">&#9889; Maria's AI Hardware Store</div>
-        <p style="color:var(--accent);font-size:.87em;margin-bottom:8px;font-weight:600">Enterprise AI Infrastructure &amp; GPU Solutions</p>
+        <p style="color:var(--accent);font-size:.87em;margin-bottom:8px;font-weight:600">Enterprise AI Infrastructure &bull; GPU Clusters &bull; NVIDIA Solutions</p>
         <p style="color:var(--muted);font-size:.84em;margin-bottom:6px">&#128241; +1 (786) 213-4550 &bull; &#128231; mdwork3003@gmail.com</p>
         <p style="color:var(--muted);font-size:.81em;max-width:280px">Built with Python, Flask, PostgreSQL, and AWS EC2</p>
       </div>
@@ -528,7 +528,7 @@ HTML_FOOTER = """
         <a href="#gpus">GPU Catalog</a>
         <a href="#compare">Comparison Table</a>
         <a href="#builds">Recommended Builds</a>
-        <a href="/quote">Get a Quote</a>
+        <a href="/quote">Request a Solution Quote</a>
         <a href="/requests">View Requests</a>
       </div>
       <div class="footer-col">
