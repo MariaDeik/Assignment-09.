@@ -214,13 +214,13 @@ HOME_WATTS = 1200
 EV_KWH = 90
 CONTACT_EMAIL = "mdwork3003@gmail.com"
 WA_DISPLAY = "+1 (786) 213-4550"
-WA_FLOAT_LINK = "https://wa.me/17862134550?text=Hi%20Maria!%20I%27m%20interested%20in%20your%20AI%20hardware%20solutions."
-WA_CARD_LINK  = "https://wa.me/17862134550?text=Hi%20Maria!%20I%20found%20your%20AI%20Hardware%20Store%20and%20I%27d%20like%20to%20learn%20more%20about%20this%20hardware%20configuration."
+WA_FLOAT_LINK = "https://wa.me/17862134550?text=Hello%2C%20I%27m%20interested%20in%20learning%20more%20about%20your%20AI%20hardware%20solutions.%20Could%20someone%20from%20your%20team%20help%20me%20choose%20the%20right%20configuration%3F"
+WA_CARD_LINK  = "https://wa.me/17862134550?text=Hello%2C%20I%27m%20interested%20in%20learning%20more%20about%20your%20AI%20hardware%20solutions.%20Could%20someone%20from%20your%20team%20help%20me%20choose%20the%20right%20configuration%3F"
 
 WA_SVG_SM = '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>'
 WA_SVG_LG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>'
 
-def wa_card_btn(label="Ask Maria on WhatsApp"):
+def wa_card_btn(label="Contact Our Solutions Team"):
     return f'<a class="wa-btn" href="{WA_CARD_LINK}" target="_blank" rel="noopener">{WA_SVG_SM} {label}</a>'
 
 SVG = {}
@@ -486,7 +486,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:48px 40p
     <div class="brand-logo">&#9889; Maria's AI Hardware Store</div>
     <div class="brand-tag">Real NVIDIA Hardware &bull; Real Prices &bull; Expert Guidance</div>
   </div>
-  <a class="hdr-cta" href="#contact">Contact Maria</a>
+  <a class="hdr-cta" href="#contact">Contact Our Team</a>
 </header>
 <nav>
   <a href="/">Home</a>
@@ -501,7 +501,7 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:48px 40p
 </nav>
 <a class="wa-float" href="https://wa.me/17862134550?text=Hi%20Maria!%20I%27m%20interested%20in%20your%20AI%20hardware%20solutions." target="_blank" rel="noopener">
   <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-  <span class="wa-label">Chat with Maria</span>
+  <span class="wa-label">Live Support</span>
 </a>
 """
 
@@ -522,7 +522,7 @@ HTML_FOOTER = """
         <a href="/requests">View Requests</a>
       </div>
       <div class="footer-col">
-        <h5>Contact Maria</h5>
+        <h5>Contact Our Team</h5>
         <a href="https://wa.me/17862134550?text=Hi%20Maria!%20I%27m%20interested%20in%20your%20AI%20hardware%20solutions." target="_blank">&#128241; WhatsApp +1 (786) 213-4550</a>
         <a href="mailto:mdwork3003@gmail.com">&#128231; mdwork3003@gmail.com</a>
         <a href="#about">About Maria</a>
@@ -567,7 +567,7 @@ def index():
         <p class="hero-msg">Find the right hardware in minutes with clear memory math, real prices, and human-friendly power estimates.</p>
         <div class="hero-btns">
           <a class="btn-primary" href="#builds">&#9889; Build My AI Cluster</a>
-          <a class="btn-ghost" href="#contact">Contact Maria</a>
+          <a class="btn-ghost" href="#contact">Contact Our Team</a>
         </div>
       </div>
       <div class="hero-visual">{HERO_SVG}</div>
@@ -605,7 +605,7 @@ def index():
           <ul class="fe-cases">{cases_html}</ul>
           <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
             <a class="btn-primary" href="/quote">Request Enterprise Quote &rarr;</a>
-            {wa_card_btn("Ask Maria on WhatsApp")}
+            {wa_card_btn("Request Technical Consultation")}
           </div>
         </div>
       </div>
@@ -880,8 +880,8 @@ def index():
             </div>
           </div>
           <div class="about-btns">
-            <a class="btn-primary" href="#contact" style="font-size:.9em;padding:11px 22px">Contact Maria</a>
-            <a class="btn-wa" href="{WA_FLOAT_LINK}" target="_blank" rel="noopener">{WA_SVG_SM} Chat on WhatsApp</a>
+            <a class="btn-primary" href="#contact" style="font-size:.9em;padding:11px 22px">Contact Our Team</a>
+            <a class="btn-wa" href="{WA_FLOAT_LINK}" target="_blank" rel="noopener">{WA_SVG_SM} Talk to a Specialist</a>
           </div>
         </div>
       </div>
@@ -905,10 +905,10 @@ def index():
     P.append(f'''
     <section id="contact" class="fade-in">
       <div class="sec-label">Get in Touch</div>
-      <div class="sec-title">Contact Maria</div>
+      <div class="sec-title">Contact Our AI Infrastructure Team</div>
       <div class="contact-grid">
         <div class="contact-card">
-          <p class="contact-intro">Need help choosing the right AI hardware? Contact Maria for personalized recommendations and custom enterprise quotes.</p>
+          <p class="contact-intro">Our specialists can help you choose the right NVIDIA hardware, estimate infrastructure costs, and recommend the best solution for your AI workloads.</p>
           <div class="contact-line">
             <span class="ci-icon">&#128241;</span>
             <div><div class="ci-lbl">WhatsApp</div><div class="ci-val">+1 (786) 213-4550</div></div>
@@ -918,8 +918,8 @@ def index():
             <div><div class="ci-lbl">Email</div><div class="ci-val"><a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a></div></div>
           </div>
           <div class="contact-btns">
-            <a class="btn-wa" href="{WA_FLOAT_LINK}" target="_blank" rel="noopener">{WA_SVG_SM} Chat on WhatsApp</a>
-            <a class="btn-email" href="mailto:{CONTACT_EMAIL}">{EMAIL_SVG} Email Maria</a>
+            <a class="btn-wa" href="{WA_FLOAT_LINK}" target="_blank" rel="noopener">{WA_SVG_SM} Talk to a Specialist</a>
+            <a class="btn-email" href="mailto:{CONTACT_EMAIL}">{EMAIL_SVG} Email Our Team</a>
           </div>
         </div>
         <div class="contact-card">
