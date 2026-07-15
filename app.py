@@ -1,6 +1,8 @@
-from flask import Flask, request
+from flask import Flask, request, redirect, url_for
 import psycopg2
 import psycopg2.extras
+import json
+import html
 
 app = Flask(__name__)
 
@@ -33,6 +35,10 @@ def init_db():
 
 def _e(w):
     return f"${round(w / 1000 * 8760 * 0.12):,}/yr"
+
+def min_vram_gb(params_b, precision_factor=1.0):
+    """Minimum VRAM (GB) to load a model: parameters x 1 GB x precision + 20% overhead."""
+    return round(params_b * precision_factor * 1.2)
 
 GPUS = [
     {
@@ -198,6 +204,9 @@ BUILDS = {
     },
 }
 
+GB300_QUOTE_OPTION = "GB300 NVL72 Rack — Enterprise Custom"
+VALID_BUILD_NAMES = {b['name'] for b in BUILDS.values()} | {GB300_QUOTE_OPTION}
+
 HOME_WATTS = 1200
 EV_KWH = 90
 CONTACT_EMAIL = "mdwork3003@gmail.com"
@@ -231,270 +240,364 @@ HTML_BASE = """<!DOCTYPE html>
 <title>Maria's AI Hardware Store</title>
 <style>
 :root {
-  --bg:#06080f; --bg2:#0c0f1c; --bg3:#101428; --card:#0d1020;
-  --border:#1a1e2e; --border2:#252840; --accent:#76b900; --accent2:#8ed300;
-  --text:#e8eaf2; --muted:#8890a8; --white:#ffffff;
+  --bg:#fafbfc; --bg2:#f2f4f7; --bg3:#eef1f5; --card:#ffffff;
+  --border:#e5e8ee; --border2:#d5d9e2; --accent:#3f6b00; --accent2:#5c9400;
+  --accent-fill:#6fae00; --text:#262b36; --muted:#5b6170; --white:#0a0d12;
+  --radius-sm:10px; --radius-md:14px; --radius-lg:18px; --radius-xl:24px;
+  --shadow-sm:0 1px 2px rgba(16,24,40,.04),0 2px 8px rgba(16,24,40,.06);
+  --shadow-md:0 2px 4px rgba(16,24,40,.04),0 12px 28px rgba(16,24,40,.08);
+  --shadow-lg:0 4px 6px rgba(16,24,40,.03),0 20px 40px rgba(16,24,40,.10);
+  --ease:cubic-bezier(.16,1,.3,1);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.65}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 
-/* HEADER */
-header{background:linear-gradient(180deg,#0a0e1f,#06080f);border-bottom:1px solid var(--border);padding:16px 40px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;backdrop-filter:blur(10px)}
-.brand-logo{font-size:1.45em;font-weight:700;color:var(--accent);letter-spacing:-0.5px}
-.brand-tag{color:var(--muted);font-size:0.8em;margin-top:2px}
-.hdr-cta{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#000;text-decoration:none;padding:9px 20px;border-radius:8px;font-weight:700;font-size:0.87em;box-shadow:0 0 18px rgba(118,185,0,.3);transition:background .2s,transform .15s}
-.hdr-cta:hover{background:var(--accent2);transform:translateY(-1px)}
+/* ANNOUNCEMENT BAR */
+.announce{background:var(--white);color:#e8eaf0;text-align:center;padding:9px 20px;font-size:.82em;font-weight:500;letter-spacing:.01em}
+.announce a{color:#fff;text-decoration:none;font-weight:700;margin-left:6px}
+.announce a:hover{text-decoration:underline}
+.announce .pill{display:inline-block;background:var(--accent-fill);color:#0c1400;font-weight:800;font-size:.78em;letter-spacing:.04em;padding:2px 9px;border-radius:20px;margin-right:9px;vertical-align:1px}
 
-/* NAV */
-nav{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 40px;display:flex;gap:4px;overflow-x:auto}
-nav a{color:var(--muted);text-decoration:none;font-size:0.87em;padding:11px 13px;border-bottom:2px solid transparent;transition:color .2s,border-color .2s;white-space:nowrap}
-nav a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+/* HEADER — single unified bar: logo, nav, search, icons, CTA */
+header{background:rgba(255,255,255,.92);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);border-bottom:1px solid var(--border);padding:14px 40px;display:flex;align-items:center;gap:30px;position:sticky;top:0;z-index:200}
+.brand-logo{display:flex;align-items:center;gap:9px;font-size:1.12em;font-weight:800;color:var(--white);letter-spacing:-.01em;text-decoration:none;white-space:nowrap;flex-shrink:0}
+.brand-logo .mark{display:inline-flex;align-items:center;justify-content:center;width:29px;height:29px;border-radius:8px;background:var(--accent-fill);font-size:.82em;flex-shrink:0}
+.hdr-nav{display:flex;align-items:center;gap:22px;flex-shrink:0}
+.hdr-nav a{color:var(--muted);text-decoration:none;font-size:.87em;font-weight:500;white-space:nowrap;transition:color .2s}
+.hdr-nav a:hover{color:var(--white)}
+.hdr-search{flex:1;max-width:340px;position:relative}
+.hdr-search input{width:100%;padding:9px 14px 9px 36px;background:var(--bg2);border:1px solid var(--border);border-radius:100px;font-size:.85em;color:var(--text);font-family:inherit;transition:border-color .2s,background .2s}
+.hdr-search input:focus{outline:none;border-color:var(--border2);background:var(--card)}
+.hdr-search .si{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:.9em;pointer-events:none}
+.hdr-actions{display:flex;align-items:center;gap:10px;margin-left:auto;flex-shrink:0}
+.hdr-icon-btn{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:var(--bg2);border:1px solid var(--border);color:var(--text);text-decoration:none;transition:border-color .2s,background .2s}
+.hdr-icon-btn:hover{border-color:var(--border2);background:var(--bg3)}
+.hdr-cta{display:inline-flex;align-items:center;gap:8px;background:var(--white);color:#fff;text-decoration:none;padding:10px 22px;border-radius:100px;font-weight:700;font-size:.86em;letter-spacing:.01em;transition:transform .2s var(--ease),box-shadow .2s var(--ease),background .2s;white-space:nowrap}
+.hdr-cta:hover{background:#000;transform:translateY(-1px);box-shadow:var(--shadow-md)}
 
 /* LAYOUT */
-main{max-width:1240px;margin:0 auto;padding:0 24px 120px}
-section{margin-bottom:76px}
-.sec-label{font-size:.77em;font-weight:700;color:var(--accent);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
-.sec-title{font-size:1.85em;font-weight:700;color:var(--white);margin-bottom:6px}
-.sec-sub{color:var(--muted);font-size:.95em;margin-bottom:28px}
+main{max-width:1240px;margin:0 auto;padding:0 24px 130px}
+section{margin-bottom:clamp(64px,9vw,104px)}
+.sec-label{font-size:.76em;font-weight:700;color:var(--accent);letter-spacing:.14em;text-transform:uppercase;margin-bottom:10px}
+.sec-title{font-size:clamp(1.4em,2.2vw,1.9em);font-weight:800;letter-spacing:-.01em;color:var(--white);margin-bottom:10px;line-height:1.2}
+.sec-sub{color:var(--muted);font-size:1em;max-width:640px;margin-bottom:36px;line-height:1.6}
 
 /* ANIMATIONS */
-@keyframes fadeInUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
-@keyframes pulse-glow{0%,100%{box-shadow:0 0 18px rgba(118,185,0,.3)}50%{box-shadow:0 0 32px rgba(118,185,0,.55)}}
-.fade-in{opacity:0;transform:translateY(22px);transition:opacity .65s ease,transform .65s ease}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{opacity:0;transform:translateY(18px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
 .fade-in.visible{opacity:1;transform:translateY(0)}
-.hero .fade-in{animation:fadeInUp .7s ease forwards}
+.hero .fade-in{animation:fadeInUp .8s var(--ease) forwards}
 
 /* HERO */
-.hero{padding:72px 0 52px;display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center}
-.hero-badge{display:inline-block;background:rgba(118,185,0,.1);border:1px solid rgba(118,185,0,.3);color:var(--accent);padding:5px 14px;border-radius:20px;font-size:.8em;font-weight:600;margin-bottom:18px;letter-spacing:.5px}
-.hero-title{font-size:3em;font-weight:800;line-height:1.12;color:var(--white);margin-bottom:10px}
+.hero{padding:clamp(48px,7vw,76px) 0 clamp(36px,5vw,48px);display:grid;grid-template-columns:.85fr 1.15fr;gap:44px;align-items:center}
+.hero-badge{display:inline-block;background:rgba(111,174,0,.09);border:1px solid rgba(111,174,0,.3);color:var(--accent);padding:6px 15px;border-radius:20px;font-size:.79em;font-weight:600;margin-bottom:22px;letter-spacing:.03em}
+.hero-title{font-size:clamp(2.2rem,1.1rem + 4.4vw,4.1rem);font-weight:800;line-height:1.02;letter-spacing:-.03em;color:var(--white);margin-bottom:20px}
 .hero-title span{color:var(--accent)}
-.hero-sub{font-size:.97em;color:var(--accent);font-weight:500;margin-bottom:16px;opacity:.85}
-.hero-msg{font-size:1.03em;color:var(--muted);max-width:480px;margin-bottom:30px}
-.hero-btns{display:flex;gap:14px;flex-wrap:wrap}
-.btn-primary{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#000;text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:700;font-size:.95em;transition:background .2s,transform .15s,box-shadow .2s;animation:pulse-glow 3s ease-in-out infinite}
-.btn-primary:hover{background:var(--accent2);transform:translateY(-2px);box-shadow:0 4px 32px rgba(118,185,0,.5)}
-.btn-ghost{display:inline-flex;align-items:center;gap:8px;background:transparent;color:var(--text);text-decoration:none;padding:13px 26px;border-radius:8px;font-weight:600;font-size:.95em;border:1px solid var(--border2);transition:border-color .2s,color .2s,transform .15s}
-.btn-ghost:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-2px)}
+.hero-sub{font-size:.96em;color:var(--accent);font-weight:600;margin-bottom:17px;opacity:.9}
+.hero-msg{font-size:1.14em;color:var(--muted);max-width:460px;margin-bottom:34px;line-height:1.6}
+.hero-btns{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:38px}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;background:var(--white);color:#fff;text-decoration:none;padding:15px 28px;border-radius:100px;font-weight:700;font-size:.95em;transition:transform .2s var(--ease),box-shadow .2s var(--ease),background .2s}
+.btn-primary:hover{background:#000;transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.btn-ghost{display:inline-flex;align-items:center;gap:8px;background:var(--card);color:var(--text);text-decoration:none;padding:15px 28px;border-radius:100px;font-weight:600;font-size:.95em;border:1px solid var(--border2);transition:border-color .2s,color .2s,transform .2s var(--ease),background .2s}
+.btn-ghost:hover{border-color:var(--white);color:var(--white);transform:translateY(-2px)}
+.trust-strip{display:flex;flex-wrap:wrap;gap:26px}
+.trust-strip .ti{display:flex;align-items:center;gap:9px}
+.trust-strip .ti-icon{color:var(--accent);font-size:1.05em;flex-shrink:0}
+.trust-strip .ti-name{font-size:.83em;font-weight:700;color:var(--white);line-height:1.3}
+.trust-strip .ti-sub{font-size:.74em;color:var(--muted);line-height:1.3}
+.hero-visual{position:relative;min-height:550px;border-radius:var(--radius-xl);overflow:hidden;background:#111}
+.hero-visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.hero3d-metric{position:absolute;right:22px;top:26px;z-index:4;background:rgba(18,20,24,.86);-webkit-backdrop-filter:blur(16px) saturate(1.3);backdrop-filter:blur(16px) saturate(1.3);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-lg);padding:18px 22px;box-shadow:0 20px 40px rgba(0,0,0,.25);color:#fff;min-width:190px;transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
+.hero3d-metric:hover{transform:translateY(-3px);box-shadow:0 26px 50px rgba(0,0,0,.32)}
+.hero3d-metric .m-eyebrow{display:flex;align-items:center;gap:6px;font-size:.68em;letter-spacing:.1em;text-transform:uppercase;color:#8f96a3;font-weight:700;margin-bottom:10px}
+.hero3d-metric-num{font-size:1.9em;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums;color:#fff}
+.hero3d-metric-num small{font-size:.5em;font-weight:600;color:#9aa0ac;margin-left:3px}
+.hero3d-metric-lbl{font-size:.78em;color:#9aa0ac;margin-top:2px;margin-bottom:14px;letter-spacing:.01em}
+.hero3d-metric .m-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px solid rgba(255,255,255,.08);padding-top:14px}
+.hero3d-metric .m-val{font-size:1.05em;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+.hero3d-metric .m-lbl{font-size:.7em;color:#8f96a3;margin-top:1px}
+.hero3d-metric-num{font-size:1.9em;font-weight:800;color:var(--accent);line-height:1.1;font-variant-numeric:tabular-nums}
+.hero3d-metric-lbl{font-size:.78em;color:var(--muted);margin-top:4px;letter-spacing:.02em}
 
 /* STATS BAR */
-.stats-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:0}
-.stat-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px 18px;text-align:center;transition:border-color .25s,transform .25s}
-.stat-card:hover{border-color:var(--border2);transform:translateY(-2px)}
-.stat-num{font-size:1.9em;font-weight:800;color:var(--accent);line-height:1.1}
-.stat-lbl{font-size:.8em;color:var(--muted);margin-top:4px}
+.stat-lbl{font-size:.78em;color:var(--muted);margin-top:6px;letter-spacing:.02em}
+
+/* BUILD YOUR AI CLUSTER — interactive calculator */
+.calc-card{background:var(--white);border-radius:var(--radius-xl);padding:clamp(32px,4vw,48px);display:grid;grid-template-columns:.85fr 1.15fr;gap:44px;color:#fff;box-shadow:0 30px 70px rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.06)}
+.calc-intro{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+.calc-intro h3{font-size:1.55em;font-weight:800;letter-spacing:-.015em}
+.calc-tag{font-size:.68em;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--accent-fill);background:rgba(111,174,0,.16);border:1px solid rgba(111,174,0,.32);padding:3px 10px;border-radius:20px}
+.calc-desc{color:#9aa0ac;font-size:.94em;line-height:1.65;margin-bottom:26px;max-width:360px}
+.calc-field{margin-bottom:16px}
+.calc-field label{display:block;font-size:.78em;color:#9aa0ac;margin-bottom:7px;font-weight:500}
+.calc-field select{width:100%;padding:12px 14px;background:#1c1e24;border:1px solid #33363e;border-radius:var(--radius-sm);color:#fff;font-size:.92em;font-family:inherit;cursor:pointer;transition:border-color .2s}
+.calc-field select:hover{border-color:#454952}
+.calc-field select:focus{outline:none;border-color:var(--accent-fill)}
+.calc-results{background:#0e1013;border-radius:var(--radius-lg);padding:26px;display:flex;flex-direction:column;gap:20px;border:1px solid rgba(255,255,255,.04)}
+.calc-row{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.calc-stat .cs-lbl{font-size:.72em;color:#8f96a3;margin-bottom:5px}
+.calc-stat .cs-val{font-size:1.42em;font-weight:800;color:#fff;font-variant-numeric:tabular-nums;line-height:1.15}
+.calc-stat .cs-sub{font-size:.72em;color:#8f96a3;margin-top:2px}
+.calc-cta-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid #23262d;padding-top:18px}
+.calc-cta{display:inline-flex;align-items:center;gap:8px;background:var(--accent-fill);color:#0c1400;text-decoration:none;padding:13px 24px;border-radius:100px;font-weight:700;font-size:.92em;transition:background .2s,transform .2s var(--ease),box-shadow .2s var(--ease)}
+.calc-cta:hover{background:var(--accent2);transform:translateY(-2px);box-shadow:0 12px 28px rgba(111,174,0,.28)}
+.calc-note{font-size:.76em;color:#767c88}
+
+/* FEATURED HARDWARE — carousel */
+.carousel-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:10px}
+.carousel-head .view-all{font-size:.86em;font-weight:700;color:var(--accent);text-decoration:none}
+.carousel-head .view-all:hover{text-decoration:underline}
+.carousel-wrap{position:relative}
+.carousel-track{display:flex;gap:20px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 4px 12px;scrollbar-width:none}
+.carousel-track::-webkit-scrollbar{display:none}
+.pcard{scroll-snap-align:start;flex:0 0 auto;width:300px;background:#101114;border-radius:var(--radius-lg);padding:22px;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .35s var(--ease),box-shadow .35s var(--ease)}
+.pcard:hover{transform:translateY(-6px);box-shadow:0 24px 48px rgba(0,0,0,.35)}
+.pcard .pcard-badge{position:absolute;top:16px;left:16px;background:var(--accent-fill);color:#0c1400;font-size:.68em;font-weight:800;padding:3px 9px;border-radius:20px;letter-spacing:.02em}
+.pcard-img{height:180px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;transition:transform .35s var(--ease)}
+.pcard:hover .pcard-img{transform:scale(1.04)}
+.pcard-img svg{max-width:92%;max-height:92%}
+.pcard h4{color:#fff;font-size:1.08em;font-weight:700;margin-bottom:4px;letter-spacing:-.005em}
+.pcard .pcard-spec{color:#8f96a3;font-size:.79em;margin-bottom:12px}
+.pcard .pcard-price{color:var(--accent-fill);font-size:1.22em;font-weight:800;font-variant-numeric:tabular-nums}
+.carousel-nav{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;background:var(--card);border:1px solid var(--border);color:var(--text);cursor:pointer;transition:border-color .2s,background .2s,transform .2s var(--ease);flex-shrink:0}
+.carousel-nav:hover{border-color:var(--border2);background:var(--bg2);transform:translateY(-1px)}
+.carousel-nav:disabled{opacity:.35;cursor:default;transform:none}
+.carousel-controls{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:18px}
+.carousel-dots{display:flex;gap:7px}
+.carousel-dots span{width:6px;height:6px;border-radius:50%;background:var(--border2);transition:background .2s,transform .2s}
+.carousel-dots span.active{background:var(--accent);transform:scale(1.3)}
+
+/* BOTTOM FEATURE STRIP (dark) */
+.feature-strip{background:var(--white);border-radius:var(--radius-xl);padding:clamp(28px,3.5vw,36px);display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:28px}
+.feature-strip .fs-item{display:flex;align-items:flex-start;gap:13px}
+.feature-strip .fs-icon{color:var(--accent-fill);flex-shrink:0;font-size:1.3em;line-height:1}
+.feature-strip h4{color:#fff;font-size:.92em;font-weight:700;margin-bottom:3px}
+.feature-strip p{color:#9aa0ac;font-size:.8em;line-height:1.5}
 
 /* FEATURED */
-.featured-wrap{background:linear-gradient(135deg,#0c1a2e 0%,#080f1a 60%,#0a1a0a 100%);border:1px solid rgba(118,185,0,.25);border-radius:16px;padding:40px;display:grid;grid-template-columns:260px 1fr;gap:44px;align-items:center;position:relative;overflow:hidden}
-.featured-wrap::before{content:"";position:absolute;top:-60px;right:-60px;width:300px;height:300px;background:radial-gradient(circle,rgba(118,185,0,.06) 0%,transparent 70%);pointer-events:none}
+.featured-wrap{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--accent-fill);border-radius:var(--radius-xl);padding:clamp(28px,4vw,44px);display:grid;grid-template-columns:260px 1fr;gap:48px;align-items:center;position:relative;overflow:hidden;box-shadow:var(--shadow-md)}
+.featured-wrap::before{content:"";position:absolute;top:-60px;right:-60px;width:320px;height:320px;background:radial-gradient(circle,rgba(111,174,0,.05) 0%,transparent 70%);pointer-events:none}
 .fe-rack{display:flex;justify-content:center}
-.fe-rack svg{filter:drop-shadow(0 0 16px rgba(118,185,0,.25))}
-.fe-badge{display:inline-block;background:rgba(118,185,0,.15);border:1px solid rgba(118,185,0,.4);color:var(--accent);padding:4px 14px;border-radius:20px;font-size:.77em;font-weight:700;margin-bottom:14px;letter-spacing:.5px}
-.fe-title{font-size:2em;font-weight:800;color:var(--white);margin-bottom:6px}
-.fe-sub{color:var(--accent);font-size:.92em;font-weight:500;margin-bottom:14px}
-.fe-desc{color:var(--muted);font-size:.9em;max-width:520px;margin-bottom:20px}
-.fe-specs{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px}
-.fe-spec{background:rgba(118,185,0,.07);border:1px solid rgba(118,185,0,.2);border-radius:8px;padding:8px 16px;text-align:center}
-.fe-spec-val{font-size:1.05em;font-weight:700;color:var(--accent)}
-.fe-spec-lbl{font-size:.73em;color:var(--muted);margin-top:2px}
-.fe-cases{color:var(--muted);font-size:.87em;margin-bottom:22px}
+.fe-rack svg{filter:drop-shadow(0 6px 20px rgba(16,24,40,.18))}
+.fe-badge{display:inline-flex;align-items:center;gap:7px;background:rgba(111,174,0,.10);border:1px solid rgba(111,174,0,.32);color:var(--accent);padding:5px 14px;border-radius:20px;font-size:.76em;font-weight:700;margin-bottom:16px;letter-spacing:.06em}
+.fe-title{font-size:clamp(1.6em,2.6vw,2.1em);font-weight:800;letter-spacing:-.01em;color:var(--white);margin-bottom:8px}
+.fe-sub{color:var(--accent);font-size:.92em;font-weight:600;margin-bottom:16px}
+.fe-desc{color:var(--muted);font-size:.92em;max-width:540px;margin-bottom:22px;line-height:1.65}
+.fe-specs{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px}
+.fe-spec{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 17px;text-align:center}
+.fe-spec-val{font-size:1.05em;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.fe-spec-lbl{font-size:.72em;color:var(--muted);margin-top:3px;letter-spacing:.02em}
+.fe-cases{color:var(--muted);font-size:.87em;margin-bottom:24px;line-height:1.7}
 .fe-cases li{margin:4px 0 4px 16px}
 
 /* BADGE STYLES */
-.bdg{display:inline-block;padding:3px 11px;border-radius:20px;font-size:.73em;font-weight:700;letter-spacing:.4px;margin-bottom:10px}
-.bdg-frontier{background:rgba(150,100,255,.15);color:#c090ff;border:1px solid rgba(150,100,255,.3)}
-.bdg-popular{background:rgba(255,120,30,.15);color:#ff8840;border:1px solid rgba(255,120,30,.3)}
-.bdg-enterprise{background:rgba(118,185,0,.12);color:var(--accent);border:1px solid rgba(118,185,0,.28)}
-.bdg-value{background:rgba(255,210,50,.12);color:#f0c030;border:1px solid rgba(255,210,50,.28)}
-.bdg-workstation{background:rgba(90,180,255,.12);color:#5ab4ff;border:1px solid rgba(90,180,255,.28)}
-.bdg-budget{background:rgba(140,140,140,.12);color:#aaa;border:1px solid rgba(140,140,140,.25)}
+.bdg{display:inline-block;padding:4px 12px;border-radius:20px;font-size:.72em;font-weight:700;letter-spacing:.05em;margin-bottom:12px}
+.bdg-frontier{background:rgba(150,100,255,.10);color:#6d28d9;border:1px solid rgba(150,100,255,.35)}
+.bdg-popular{background:rgba(255,120,30,.10);color:#b45309;border:1px solid rgba(255,120,30,.35)}
+.bdg-enterprise{background:rgba(111,174,0,.10);color:var(--accent);border:1px solid rgba(111,174,0,.35)}
+.bdg-value{background:rgba(255,210,50,.16);color:#a16207;border:1px solid rgba(210,160,20,.35)}
+.bdg-workstation{background:rgba(37,99,235,.09);color:#2563eb;border:1px solid rgba(37,99,235,.3)}
+.bdg-budget{background:rgba(120,120,130,.10);color:#52525b;border:1px solid rgba(120,120,130,.3)}
 
 /* GPU CARDS */
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:22px}
-.gpu-card{background:var(--card);border:1px solid var(--border);border-top:3px solid transparent;border-radius:14px;padding:22px;transition:border-top-color .25s,transform .25s,box-shadow .25s;display:flex;flex-direction:column}
-.gpu-card:hover{border-top-color:var(--accent);transform:translateY(-5px);box-shadow:0 10px 44px rgba(118,185,0,.1)}
-.gpu-icon{border-radius:10px;overflow:hidden;margin-bottom:14px;background:#08101e}
+.gpu-card{background:var(--card);border:1px solid var(--border);border-top:3px solid transparent;border-radius:var(--radius-lg);padding:24px;transition:border-top-color .25s var(--ease),transform .25s var(--ease),box-shadow .25s var(--ease);display:flex;flex-direction:column}
+.gpu-card:hover{border-top-color:var(--accent-fill);transform:translateY(-4px);box-shadow:var(--shadow-lg)}
+.gpu-icon{border-radius:var(--radius-sm);overflow:hidden;margin-bottom:16px;background:#08101e}
 .gpu-icon svg{display:block;width:100%;height:auto}
-.gpu-price{font-size:1.65em;font-weight:800;color:var(--accent);margin:8px 0}
-.spec-row{display:flex;align-items:center;gap:6px;font-size:.83em;color:var(--muted);margin:3px 0}
-.spec-row strong{color:var(--text)}
+.gpu-price{font-size:1.6em;font-weight:800;color:var(--accent);margin:10px 0;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.spec-row{display:flex;align-items:center;gap:7px;font-size:.83em;color:var(--muted);margin:4px 0}
+.spec-row strong{color:var(--text);font-weight:600}
 .spec-row .spec-icon{font-size:.95em;min-width:18px}
-.spec-divider{border:none;border-top:1px solid var(--border);margin:10px 0}
-.card-actions{margin-top:auto;padding-top:14px}
+.spec-divider{border:none;border-top:1px solid var(--border);margin:12px 0}
+.card-actions{margin-top:auto;padding-top:16px}
 
 /* HOW TO CHOOSE */
 .htc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px}
-.htc-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:10px;transition:border-color .25s,transform .25s}
-.htc-card:hover{border-color:var(--accent);transform:translateY(-3px)}
-.htc-vram{font-size:.82em;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.htc-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;display:flex;flex-direction:column;gap:10px;transition:border-color .25s var(--ease),transform .25s var(--ease),box-shadow .25s var(--ease)}
+.htc-card:hover{border-color:var(--accent-fill);transform:translateY(-3px);box-shadow:var(--shadow-sm)}
+.htc-vram{font-size:.8em;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.08em}
 .htc-arrow{font-size:1.3em;color:var(--accent)}
 .htc-gpu{font-size:1.1em;font-weight:700;color:var(--white)}
-.htc-price{font-size:1.3em;font-weight:800;color:var(--accent)}
-.htc-note{font-size:.83em;color:var(--muted);line-height:1.5}
+.htc-price{font-size:1.3em;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
+.htc-note{font-size:.83em;color:var(--muted);line-height:1.55}
 
 /* SIZING (compact, below hero) */
-.sizing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px}
-.sizing-step{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
-.sizing-num{background:var(--accent);color:#0a1020;font-weight:800;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.85em}
-.sizing-step strong{color:var(--white);font-size:.92em}
-.sizing-step p{color:var(--muted);font-size:.83em;margin-top:3px;line-height:1.45}
-.sizing-example{background:var(--bg3);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:13px 18px;color:var(--text);font-size:.88em}
+.sizing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
+.sizing-step{display:flex;gap:13px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:18px;transition:border-color .2s}
+.sizing-step:hover{border-color:var(--border2)}
+.sizing-num{background:var(--accent-fill);color:#0c1400;font-weight:800;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.85em}
+.sizing-step strong{color:var(--white);font-size:.92em;letter-spacing:-.005em}
+.sizing-step p{color:var(--muted);font-size:.83em;margin-top:4px;line-height:1.5}
+.sizing-example{background:var(--bg3);border-left:3px solid var(--accent-fill);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:14px 20px;color:var(--text);font-size:.89em;line-height:1.6}
 
 /* COMPARE TABLE */
-.tbl-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border)}
+.tbl-wrap{overflow-x:auto;border-radius:var(--radius-md);border:1px solid var(--border)}
 table{width:100%;border-collapse:collapse;background:var(--card)}
-th{background:var(--bg3);color:var(--accent);padding:13px 18px;text-align:left;font-size:.8em;font-weight:700;letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border)}
-td{padding:13px 18px;border-bottom:1px solid var(--border);font-size:.9em;color:var(--text)}
+th{background:var(--bg3);color:var(--accent);padding:14px 20px;text-align:left;font-size:.78em;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid var(--border)}
+td{padding:14px 20px;border-bottom:1px solid var(--border);font-size:.9em;color:var(--text)}
 tr:last-child td{border-bottom:none}
-tbody tr:hover td{background:rgba(118,185,0,.04)}
+tbody tr{transition:background .15s}
+tbody tr:hover td{background:rgba(111,174,0,.05)}
 .td-name{font-weight:600;color:var(--white)}
-.td-mem{color:var(--accent);font-weight:600}
+.td-mem{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
 .hyper td{color:var(--accent)}
 
 /* MODELS */
-.model-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;transition:border-color .2s,box-shadow .2s}
-.model-card:hover{border-color:var(--border2);box-shadow:0 4px 20px rgba(0,0,0,.3)}
-.mem-calc{background:var(--bg3);border-left:3px solid var(--accent);padding:14px 18px;border-radius:0 8px 8px 0;font-family:'Courier New',monospace;font-size:.86em;margin-top:14px;line-height:1.85}
+.model-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:14px;transition:border-color .2s,box-shadow .2s var(--ease)}
+.model-card:hover{border-color:var(--border2);box-shadow:var(--shadow-md)}
+.mem-calc{background:var(--bg3);border-left:3px solid var(--accent-fill);padding:15px 19px;border-radius:0 var(--radius-sm) var(--radius-sm) 0;font-family:'Courier New',monospace;font-size:.85em;margin-top:16px;line-height:1.85}
 .mem-result{color:var(--accent);font-weight:700}
 
 /* CLUSTER */
-.cluster-section{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start}
-.cluster-diagram{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:26px}
-.explainer-box{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:17px;margin-bottom:12px}
-.explainer-box h4{color:var(--accent);margin-bottom:6px;font-size:.9em}
-.explainer-box p{font-size:.86em;color:var(--muted)}
+.cluster-section{display:grid;grid-template-columns:1fr 1fr;gap:44px;align-items:start}
+.cluster-diagram{background:linear-gradient(160deg,#0d1420,#080b12);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px;box-shadow:var(--shadow-sm)}
+.explainer-box{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:18px;margin-bottom:12px;transition:border-color .2s}
+.explainer-box:hover{border-color:var(--border2)}
+.explainer-box h4{color:var(--accent);margin-bottom:7px;font-size:.9em;font-weight:700}
+.explainer-box p{font-size:.86em;color:var(--muted);line-height:1.6}
 
 /* BUILDS */
-.build-card{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:14px;padding:26px;margin-bottom:20px;transition:box-shadow .25s,transform .25s}
-.build-card:hover{box-shadow:0 6px 32px rgba(118,185,0,.1);transform:translateY(-2px)}
-.bld-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px;margin:16px 0}
-.stat-box{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px;text-align:center}
-.stat-val{font-size:1.3em;font-weight:800;color:var(--accent)}
-.stat-lbl{font-size:.77em;color:var(--muted);margin-top:3px}
-.pwr-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px}
-.pwr-box{background:rgba(118,185,0,.06);border:1px solid rgba(118,185,0,.18);border-radius:10px;padding:12px 16px;font-size:.87em;display:flex;align-items:center;gap:10px}
+.build-card{background:var(--card);border:1px solid var(--border);border-left:4px solid var(--accent-fill);border-radius:var(--radius-lg);padding:28px;margin-bottom:20px;transition:box-shadow .25s var(--ease),transform .25s var(--ease)}
+.build-card:hover{box-shadow:var(--shadow-md);transform:translateY(-2px)}
+.bld-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:12px;margin:18px 0}
+.stat-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center}
+.stat-val{font-size:1.28em;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
+.pwr-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}
+.pwr-box{background:rgba(111,174,0,.06);border:1px solid rgba(111,174,0,.2);border-radius:var(--radius-sm);padding:13px 17px;font-size:.87em;display:flex;align-items:center;gap:11px}
 .pwr-icon{font-size:1.4em;line-height:1}
-.path-pill{display:inline-block;padding:4px 13px;border-radius:20px;font-size:.79em;font-weight:700;margin-bottom:10px}
-.pill-startup{background:rgba(255,102,0,.13);color:#ff8040;border:1px solid rgba(255,102,0,.28)}
-.pill-mid{background:rgba(90,180,255,.12);color:#5ab4ff;border:1px solid rgba(90,180,255,.26)}
-.pill-ent{background:rgba(118,185,0,.13);color:var(--accent);border:1px solid rgba(118,185,0,.28)}
+.path-pill{display:inline-block;padding:4px 13px;border-radius:20px;font-size:.78em;font-weight:700;letter-spacing:.03em;margin-bottom:12px}
+.pill-startup{background:rgba(255,102,0,.10);color:#b45309;border:1px solid rgba(255,102,0,.32)}
+.pill-mid{background:rgba(37,99,235,.09);color:#2563eb;border:1px solid rgba(37,99,235,.3)}
+.pill-ent{background:rgba(111,174,0,.10);color:var(--accent);border:1px solid rgba(111,174,0,.32)}
 
 /* TRUST */
 .trust-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
-.trust-item{display:flex;align-items:flex-start;gap:14px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px}
-.trust-check{flex-shrink:0;width:28px;height:28px;background:rgba(118,185,0,.12);border:1px solid rgba(118,185,0,.3);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:.85em;font-weight:700}
-.trust-item h4{color:var(--white);font-size:.93em;margin-bottom:3px}
-.trust-item p{color:var(--muted);font-size:.82em}
+.trust-item{display:flex;align-items:flex-start;gap:15px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px;transition:border-color .2s}
+.trust-item:hover{border-color:var(--border2)}
+.trust-check{flex-shrink:0;width:28px;height:28px;background:rgba(111,174,0,.10);border:1px solid rgba(111,174,0,.32);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:.85em;font-weight:700}
+.trust-item h4{color:var(--white);font-size:.93em;margin-bottom:4px;font-weight:700}
+.trust-item p{color:var(--muted);font-size:.83em;line-height:1.55}
 
 /* WHY */
 .why-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:16px}
-.why-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;transition:border-color .2s,transform .2s}
+.why-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:22px;transition:border-color .2s,transform .2s var(--ease)}
 .why-card:hover{border-color:var(--border2);transform:translateY(-2px)}
-.why-icon{font-size:1.75em;margin-bottom:10px}
-.why-card h4{color:var(--white);margin-bottom:5px;font-size:.94em}
-.why-card p{color:var(--muted);font-size:.83em}
+.why-icon{font-size:1.7em;margin-bottom:12px}
+.why-card h4{color:var(--white);margin-bottom:6px;font-size:.94em;font-weight:700}
+.why-card p{color:var(--muted);font-size:.83em;line-height:1.55}
 
 /* ABOUT */
-.about-grid{display:grid;grid-template-columns:auto 1fr;gap:36px;align-items:center;background:linear-gradient(135deg,#0c1428,#080f1a);border:1px solid var(--border);border-radius:16px;padding:36px}
-.about-avatar{width:110px;height:110px;border-radius:50%;background:linear-gradient(135deg,#0d1f35,#0a1828);border:2px solid rgba(118,185,0,.4);display:flex;align-items:center;justify-content:center;font-size:3em;flex-shrink:0}
-.about-content h2{color:var(--white);font-size:1.6em;margin-bottom:12px}
-.about-content p{color:var(--muted);font-size:.9em;line-height:1.7;margin-bottom:16px}
-.about-contacts{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px}
-.about-contact-item{background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px 16px;font-size:.86em}
-.about-contact-item .aci-lbl{color:var(--muted);font-size:.77em}
+.about-grid{display:grid;grid-template-columns:auto 1fr;gap:40px;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-xl);padding:40px;box-shadow:var(--shadow-md)}
+.about-avatar{width:110px;height:110px;border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(111,174,0,.16),rgba(111,174,0,.05));border:2px solid rgba(111,174,0,.3);display:flex;align-items:center;justify-content:center;font-size:3em;flex-shrink:0}
+.about-content h2{color:var(--white);font-size:clamp(1.4em,2.2vw,1.7em);font-weight:800;letter-spacing:-.01em;margin-bottom:14px}
+.about-content p{color:var(--muted);font-size:.92em;line-height:1.7;margin-bottom:16px}
+.about-contacts{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.about-contact-item{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 17px;font-size:.86em}
+.about-contact-item .aci-lbl{color:var(--muted);font-size:.76em}
 .about-contact-item .aci-val{color:var(--white);font-weight:600}
 .about-btns{display:flex;gap:12px;flex-wrap:wrap}
 
 /* CONTACT */
 .contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
-.contact-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:30px}
-.contact-intro{color:var(--muted);margin-bottom:22px;line-height:1.7;font-size:.91em}
-.contact-line{display:flex;align-items:center;gap:13px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:13px 17px;margin-bottom:11px}
+.contact-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:32px}
+.contact-intro{color:var(--muted);margin-bottom:24px;line-height:1.7;font-size:.92em}
+.contact-line{display:flex;align-items:center;gap:14px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 18px;margin-bottom:11px}
 .ci-icon{font-size:1.25em}
-.ci-lbl{font-size:.76em;color:var(--muted)}
+.ci-lbl{font-size:.75em;color:var(--muted)}
 .ci-val{font-weight:600;color:var(--white);font-size:.94em}
 .ci-val a{color:var(--accent);text-decoration:none}
 .ci-val a:hover{text-decoration:underline}
-.contact-btns{display:flex;gap:11px;flex-wrap:wrap;margin-top:18px}
-.btn-wa{display:inline-flex;align-items:center;gap:8px;background:#0f1f0f;border:1px solid #25D366;color:#25D366;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:700;font-size:.88em;transition:background .2s,color .2s}
-.btn-wa:hover{background:#25D366;color:#fff}
-.btn-email{display:inline-flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);color:var(--text);text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:600;font-size:.88em;transition:border-color .2s,color .2s}
-.btn-email:hover{border-color:var(--accent);color:var(--accent)}
+.contact-btns{display:flex;gap:11px;flex-wrap:wrap;margin-top:20px}
+.btn-wa{display:inline-flex;align-items:center;gap:8px;background:#25D366;border:1px solid #25D366;color:#fff;text-decoration:none;padding:11px 21px;border-radius:var(--radius-sm);font-weight:700;font-size:.88em;transition:background .2s,transform .2s var(--ease),box-shadow .2s;box-shadow:var(--shadow-sm)}
+.btn-wa:hover{background:#1ebe5d;transform:translateY(-1px);box-shadow:var(--shadow-md)}
+.btn-email{display:inline-flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border2);color:var(--text);text-decoration:none;padding:11px 21px;border-radius:var(--radius-sm);font-weight:600;font-size:.88em;transition:border-color .2s,color .2s,transform .2s var(--ease)}
+.btn-email:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px)}
 
 /* FORM */
-.form-wrap{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:30px;max-width:600px}
-.form-wrap label{display:block;font-size:.84em;color:var(--muted);margin-bottom:6px;margin-top:18px}
+.form-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:32px;max-width:600px}
+.form-wrap label{display:block;font-size:.84em;color:var(--muted);margin-bottom:7px;margin-top:20px;font-weight:500}
 .form-wrap label:first-child{margin-top:0}
-.form-wrap input,.form-wrap select{width:100%;padding:11px 15px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:.94em}
-.form-wrap input:focus,.form-wrap select:focus{outline:none;border-color:var(--accent)}
-.form-wrap button{margin-top:20px;width:100%;padding:13px;background:var(--accent);color:#000;border:none;border-radius:8px;font-size:1em;font-weight:700;cursor:pointer;transition:background .2s,transform .15s;box-shadow:0 0 20px rgba(118,185,0,.28)}
-.form-wrap button:hover{background:var(--accent2);transform:translateY(-1px)}
-.form-success{background:rgba(118,185,0,.07);border:1px solid rgba(118,185,0,.3);border-radius:10px;padding:13px 17px;color:var(--accent);margin-bottom:18px;font-size:.92em}
+.form-wrap input,.form-wrap select{width:100%;padding:12px 16px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);color:var(--text);font-size:.94em;font-family:inherit;transition:border-color .2s,box-shadow .2s}
+.form-wrap input:focus,.form-wrap select:focus{outline:none;border-color:var(--accent-fill);box-shadow:0 0 0 3px rgba(111,174,0,.16)}
+.form-wrap button{margin-top:22px;width:100%;padding:14px;background:var(--accent-fill);color:#0c1400;border:none;border-radius:var(--radius-sm);font-size:1em;font-weight:700;cursor:pointer;transition:background .2s,transform .2s var(--ease),box-shadow .2s;box-shadow:var(--shadow-sm)}
+.form-wrap button:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:var(--shadow-md)}
+.form-success{background:rgba(111,174,0,.08);border:1px solid rgba(111,174,0,.3);border-radius:var(--radius-sm);padding:14px 18px;color:var(--accent);margin-bottom:20px;font-size:.92em}
+.form-error{background:rgba(200,50,50,.08);border:1px solid rgba(200,50,50,.35);border-radius:var(--radius-sm);padding:14px 18px;color:#b3492e;margin-bottom:20px;font-size:.92em}
 
 /* REQUESTS */
 .req-id{color:var(--accent);font-weight:700;font-size:1.05em}
 
 /* WA */
-.wa-btn{display:inline-flex;align-items:center;gap:7px;background:#0f1f0f;border:1px solid #25D366;color:#25D366;text-decoration:none;padding:8px 14px;border-radius:8px;font-size:.83em;font-weight:600;transition:background .2s,color .2s}
-.wa-btn:hover{background:#25D366;color:#fff}
-.wa-float{position:fixed;bottom:28px;right:28px;z-index:9999;display:flex;align-items:center;gap:10px;background:#25D366;color:#fff;text-decoration:none;padding:14px 22px;border-radius:50px;font-weight:700;font-size:.94em;box-shadow:0 4px 24px rgba(37,211,102,.4);transition:background .2s,transform .2s,box-shadow .2s}
-.wa-float:hover{background:#1ebe5d;transform:translateY(-2px);box-shadow:0 6px 32px rgba(37,211,102,.55)}
+.wa-btn{display:inline-flex;align-items:center;gap:7px;background:#25D366;border:1px solid #25D366;color:#fff;text-decoration:none;padding:9px 15px;border-radius:var(--radius-sm);font-size:.83em;font-weight:600;transition:background .2s,transform .2s var(--ease)}
+.wa-btn:hover{background:#1ebe5d;transform:translateY(-1px)}
+.wa-float{position:fixed;bottom:28px;right:28px;z-index:9999;display:flex;align-items:center;gap:10px;background:#25D366;color:#fff;text-decoration:none;padding:14px 22px;border-radius:50px;font-weight:700;font-size:.94em;box-shadow:0 4px 20px rgba(37,211,102,.28);transition:background .2s,transform .2s var(--ease),box-shadow .2s}
+.wa-float:hover{background:#1ebe5d;transform:translateY(-2px);box-shadow:0 8px 28px rgba(37,211,102,.36)}
 
 /* FOOTER */
-footer{background:var(--bg2);border-top:1px solid var(--border);padding:48px 40px 32px;margin-top:60px}
+footer{background:var(--bg2);border-top:1px solid var(--border);padding:56px 40px 36px;margin-top:60px}
 .footer-inner{max-width:1240px;margin:0 auto}
-.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:40px;margin-bottom:36px}
-.footer-logo{font-size:1.25em;font-weight:700;color:var(--accent);margin-bottom:8px}
-.footer-brand p{color:var(--muted);font-size:.85em;max-width:270px}
-.footer-col h5{color:var(--white);font-size:.87em;font-weight:700;margin-bottom:13px}
-.footer-col a{display:block;color:var(--muted);text-decoration:none;font-size:.84em;margin-bottom:8px}
+.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:44px;margin-bottom:40px}
+.footer-logo{font-size:1.22em;font-weight:800;color:var(--accent);margin-bottom:10px;letter-spacing:-.01em}
+.footer-brand p{color:var(--muted);font-size:.85em;max-width:270px;line-height:1.6}
+.footer-col h5{color:var(--white);font-size:.85em;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:15px}
+.footer-col a{display:block;color:var(--muted);text-decoration:none;font-size:.85em;margin-bottom:10px;transition:color .15s}
 .footer-col a:hover{color:var(--accent)}
-.footer-bottom{border-top:1px solid var(--border);padding-top:22px;display:flex;justify-content:space-between;align-items:center}
+.footer-bottom{border-top:1px solid var(--border);padding-top:24px;display:flex;justify-content:space-between;align-items:center}
 .footer-bottom p{color:var(--muted);font-size:.82em}
 
 /* 4-BIT QUANTIZATION */
-.quant-compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
-.quant-col{border-radius:10px;padding:16px;border:1px solid}
-.quant-full{border-color:var(--border2);background:rgba(255,255,255,.02)}
-.quant-4bit{border-color:rgba(118,185,0,.3);background:rgba(118,185,0,.04)}
-.quant-label{font-size:.75em;font-weight:700;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.quant-compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.quant-col{border-radius:var(--radius-md);padding:18px;border:1px solid}
+.quant-full{border-color:var(--border2);background:var(--bg2)}
+.quant-4bit{border-color:rgba(111,174,0,.32);background:rgba(111,174,0,.05)}
+.quant-label{font-size:.74em;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:9px}
 .quant-full .quant-label{color:var(--muted)}
 .quant-4bit .quant-label{color:var(--accent)}
-.quant-build{background:var(--bg3);border-radius:8px;padding:10px 14px;margin-top:10px;font-size:.83em;color:var(--muted);line-height:1.6}
+.quant-build{background:var(--bg3);border-radius:var(--radius-sm);padding:11px 15px;margin-top:11px;font-size:.83em;color:var(--muted);line-height:1.6}
 .quant-build strong{color:var(--white)}
-.quant-savings{display:inline-block;background:rgba(118,185,0,.12);border:1px solid rgba(118,185,0,.25);color:var(--accent);border-radius:6px;padding:2px 9px;font-size:.75em;font-weight:700;margin-left:8px}
-.quant-note{background:linear-gradient(135deg,rgba(118,185,0,.07),rgba(118,185,0,.03));border:1px solid rgba(118,185,0,.25);border-left:4px solid var(--accent);border-radius:12px;padding:22px 26px;margin-top:24px}
+.quant-savings{display:inline-block;background:rgba(111,174,0,.12);border:1px solid rgba(111,174,0,.3);color:var(--accent);border-radius:6px;padding:2px 9px;font-size:.75em;font-weight:700;margin-left:8px}
+.quant-note{background:linear-gradient(135deg,rgba(111,174,0,.07),rgba(111,174,0,.02));border:1px solid rgba(111,174,0,.25);border-left:4px solid var(--accent-fill);border-radius:var(--radius-md);padding:24px 28px;margin-top:26px}
 .quant-note p{color:var(--muted);font-size:.91em;line-height:1.8}
 
 /* TECH BADGES */
-.tech-grid{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
-.tech-badge{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 20px;font-size:.88em;color:var(--text);font-weight:600;transition:border-color .2s,transform .2s,color .2s}
+.tech-grid{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px}
+.tech-badge{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 21px;font-size:.87em;color:var(--text);font-weight:600;transition:border-color .2s,transform .2s var(--ease),color .2s}
 .tech-badge:hover{border-color:var(--accent);transform:translateY(-2px);color:var(--accent)}
 
 /* DISCLAIMER */
-.price-disclaimer{background:rgba(118,185,0,.05);border:1px solid rgba(118,185,0,.15);border-radius:8px;padding:10px 16px;font-size:.8em;color:var(--muted);margin-bottom:20px;line-height:1.6}
+.price-disclaimer{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 17px;font-size:.8em;color:var(--muted);margin-bottom:22px;line-height:1.6}
 
 /* RESPONSIVE */
+@media(max-width:1080px){
+  .hdr-nav{display:none}
+}
 @media(max-width:880px){
-  .hero{grid-template-columns:1fr;gap:32px;padding:44px 0 32px}
-  .hero-visual{display:none}
-  .hero-title{font-size:2.1em}
+  .hero{grid-template-columns:1fr;gap:28px;padding:36px 0 28px}
+  .hero-visual{min-height:320px}
+  .hero3d-metric{right:14px;top:14px;left:14px;padding:14px 16px;min-width:0}
+  .hero3d-metric-num{font-size:1.5em}
+  .hero3d-metric .m-grid{grid-template-columns:repeat(4,1fr);gap:8px}
+  .hero3d-metric .m-val{font-size:.85em}
+  .trust-strip{gap:16px 22px}
+  .calc-card{grid-template-columns:1fr;gap:24px}
+  .calc-row{grid-template-columns:repeat(2,1fr)}
   .featured-wrap{grid-template-columns:1fr;gap:28px}
   .fe-rack{display:none}
-  .stats-bar{grid-template-columns:repeat(2,1fr)}
   .sizing-grid{grid-template-columns:1fr}
   .cluster-section,.contact-grid,.about-grid,.footer-grid{grid-template-columns:1fr}
-  header{padding:13px 16px}
-  nav{padding:0 14px}
+  .feature-strip{grid-template-columns:repeat(2,1fr)}
+  header{padding:12px 16px;gap:14px}
+  .hdr-search{max-width:none}
   main{padding:0 14px 120px}
 }
 @media(max-width:600px){
   .quant-compare{grid-template-columns:1fr}
-
+  .hdr-search{display:none}
   header .hdr-cta{display:none}
-  .hero-title{font-size:1.75em}
-  .stats-bar{grid-template-columns:1fr 1fr}
+  .calc-row{grid-template-columns:1fr 1fr}
+  .feature-strip{grid-template-columns:1fr}
   .wa-float .wa-label{display:none}
   .wa-float{padding:14px;border-radius:50%;bottom:20px;right:20px}
   .footer-bottom{flex-direction:column;gap:8px;text-align:center}
@@ -502,23 +605,31 @@ footer{background:var(--bg2);border-top:1px solid var(--border);padding:48px 40p
 </style>
 </head>
 <body>
+<div class="announce"><span class="pill">NEW</span>NVIDIA GB300 NVL72 is here.<a href="#gb300">Explore the enterprise AI factory &rarr;</a></div>
 <header>
-  <div>
-    <div class="brand-logo">&#9889; Maria's AI Hardware Store</div>
-    <div class="brand-tag">Enterprise AI Infrastructure &bull; GPU Clusters &bull; NVIDIA Solutions</div>
+  <a class="brand-logo" href="/"><span class="mark">&#9889;</span>Maria's AI Hardware Store</a>
+  <nav class="hdr-nav">
+    <a href="#gpus">Hardware</a>
+    <a href="#models">AI Models</a>
+    <a href="#cluster">Clusters</a>
+    <a href="#cluster-builder">Build Your Setup</a>
+    <a href="#compare">Compare</a>
+    <a href="#about">About</a>
+  </nav>
+  <div class="hdr-search">
+    <span class="si">&#128269;</span>
+    <input type="text" id="site-search" placeholder="Search hardware, models..." autocomplete="off">
   </div>
-  <a class="hdr-cta" href="#contact">Contact Our Team</a>
+  <div class="hdr-actions">
+    <a class="hdr-icon-btn" href="https://wa.me/17862134550?text=Hello%2C%20I%27m%20interested%20in%20learning%20more%20about%20your%20AI%20hardware%20solutions.%20Could%20someone%20from%20your%20team%20help%20me%20choose%20the%20right%20configuration%3F" target="_blank" rel="noopener" title="Chat on WhatsApp">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+    </a>
+    <a class="hdr-icon-btn" href="/requests" title="Your quote requests">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+    </a>
+    <a class="hdr-cta" href="/quote">Request Quote</a>
+  </div>
 </header>
-<nav>
-  <a href="/">Home</a>
-  <a href="#gpus">GPUs</a>
-  <a href="#compare">Compare</a>
-  <a href="#models">AI Models</a>
-  <a href="#builds">Builds</a>
-  <a href="#about">About</a>
-  <a href="#contact">Contact</a>
-  <a href="/quote">Request a Solution Quote</a>
-</nav>
 <a class="wa-float" href="https://wa.me/17862134550?text=Hello%2C%20I%27m%20interested%20in%20learning%20more%20about%20your%20AI%20hardware%20solutions.%20Could%20someone%20from%20your%20team%20help%20me%20choose%20the%20right%20configuration%3F" target="_blank" rel="noopener">
   <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
   <span class="wa-label">Live Support</span>
@@ -569,6 +680,141 @@ HTML_FOOTER = """
   document.querySelectorAll('.fade-in').forEach(function(el){ obs.observe(el); });
 })();
 </script>
+
+<script>
+// ---- client-side search: filters the GPU catalog, AI model cards, and
+// featured-hardware carousel by name/description. Front-end only — there is
+// no search backend/route in this app, this just shows/hides existing cards.
+(function(){
+  var input = document.getElementById('site-search');
+  if(!input) return;
+  var targets = document.querySelectorAll('.gpu-card[data-search], .model-card[data-search], .pcard[data-search]');
+  input.addEventListener('input', function(){
+    var q = input.value.trim().toLowerCase();
+    targets.forEach(function(el){
+      var match = !q || (el.getAttribute('data-search') || '').indexOf(q) !== -1;
+      el.style.display = match ? '' : 'none';
+    });
+    if(q){
+      var anyGpuMatch = Array.prototype.some.call(
+        document.querySelectorAll('.gpu-card[data-search]'),
+        function(el){ return el.style.display !== 'none'; }
+      );
+      if(anyGpuMatch){
+        var gpuSection = document.getElementById('gpus');
+        if(gpuSection) gpuSection.scrollIntoView({behavior:'smooth', block:'start'});
+      }
+    }
+  });
+  document.addEventListener('keydown', function(e){
+    if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){
+      e.preventDefault();
+      input.focus();
+    }
+  });
+})();
+</script>
+
+<script>
+// ---- "Build Your AI Cluster" interactive calculator ----
+// Reuses the exact same formula used throughout the site:
+// parameters (B) x 1 GB x 1.2 overhead = minimum VRAM, sized against the
+// flagship GPU (NVIDIA H200 SXM5). CALC_DATA is serialized server-side from
+// the real MODELS/GPUS/BUILDS data structures — no numbers are invented.
+(function(){
+  var modelSel = document.getElementById('calc-model');
+  if(!modelSel || typeof CALC_DATA === 'undefined') return;
+  var precisionSel = document.getElementById('calc-precision');
+  var companySel = document.getElementById('calc-company');
+
+  var reqMemEl = document.getElementById('calc-req-mem');
+  var gpuCountEl = document.getElementById('calc-gpu-count');
+  var priceEl = document.getElementById('calc-price');
+  var totalMemEl = document.getElementById('calc-total-mem');
+  var powerEl = document.getElementById('calc-power');
+  var deployEl = document.getElementById('calc-deploy');
+  var ctaEl = document.getElementById('calc-cta');
+
+  function deploymentLabel(count){
+    if(count <= 2) return 'Single Server';
+    if(count <= 8) return 'AI Cluster';
+    return 'Enterprise Rack';
+  }
+
+  function recompute(){
+    var model = CALC_DATA.models[parseInt(modelSel.value, 10)];
+    var precisionBytes = parseInt(precisionSel.value, 10) === 4 ? 0.5 : 1;
+    var raw = model.params * precisionBytes;
+    var total = Math.round(raw * 1.2);
+    var gpu = CALC_DATA.gpu;
+    var count = Math.max(1, Math.ceil(total / gpu.mem));
+    var totalMem = gpu.mem * count;
+    var totalPrice = gpu.price * count;
+    var totalPowerKW = (gpu.power * count / 1000);
+
+    reqMemEl.textContent = total + ' GB';
+    gpuCountEl.textContent = count;
+    priceEl.textContent = '$' + totalPrice.toLocaleString('en-US');
+    totalMemEl.textContent = totalMem.toLocaleString('en-US') + ' GB';
+    powerEl.textContent = totalPowerKW.toFixed(1) + ' kW';
+    deployEl.textContent = deploymentLabel(count);
+    ctaEl.setAttribute('href', '/quote?build=' + companySel.value);
+  }
+
+  [modelSel, precisionSel, companySel].forEach(function(el){
+    el.addEventListener('change', recompute);
+  });
+  recompute();
+})();
+</script>
+
+<script>
+// ---- Featured Hardware carousel (prev/next + dot indicators) ----
+(function(){
+  var track = document.getElementById('pcard-track');
+  if(!track) return;
+  var prevBtn = document.getElementById('pcard-prev');
+  var nextBtn = document.getElementById('pcard-next');
+  var dotsWrap = document.getElementById('pcard-dots');
+  var cards = Array.prototype.slice.call(track.children);
+  if(!cards.length) return;
+
+  cards.forEach(function(_, i){
+    var dot = document.createElement('span');
+    if(i === 0) dot.className = 'active';
+    dot.addEventListener('click', function(){ scrollToCard(i); });
+    dotsWrap.appendChild(dot);
+  });
+  var dots = Array.prototype.slice.call(dotsWrap.children);
+
+  function cardStep(){
+    var rect = cards[0].getBoundingClientRect();
+    var style = getComputedStyle(track);
+    return rect.width + parseFloat(style.gap || 18);
+  }
+  function scrollToCard(i){
+    track.scrollTo({ left: i * cardStep(), behavior: 'smooth' });
+  }
+  function updateActive(){
+    var idx = Math.round(track.scrollLeft / cardStep());
+    dots.forEach(function(d, i){ d.classList.toggle('active', i === idx); });
+    prevBtn.disabled = track.scrollLeft <= 4;
+    nextBtn.disabled = track.scrollLeft >= track.scrollWidth - track.clientWidth - 4;
+  }
+  prevBtn.addEventListener('click', function(){
+    var idx = Math.max(0, Math.round(track.scrollLeft / cardStep()) - 1);
+    scrollToCard(idx);
+  });
+  nextBtn.addEventListener('click', function(){
+    var idx = Math.min(cards.length - 1, Math.round(track.scrollLeft / cardStep()) + 1);
+    scrollToCard(idx);
+  });
+  track.addEventListener('scroll', function(){
+    window.requestAnimationFrame(updateActive);
+  });
+  updateActive();
+})();
+</script>
 </body>
 </html>
 """
@@ -590,12 +836,60 @@ def index():
         <p class="hero-sub">Enterprise GPU Solutions &bull; NVIDIA H200 &bull; GB300 &bull; AI Clusters</p>
         <p class="hero-msg">Find the right hardware in minutes with clear memory math, real prices, and human-friendly power estimates.</p>
         <div class="hero-btns">
-          <a class="btn-primary" href="#builds">&#9889; Build My AI Cluster</a>
+          <a class="btn-primary" href="#cluster-builder">Build My AI Cluster &rarr;</a>
           <a class="btn-ghost" href="#gpus">Explore Hardware</a>
         </div>
+        <div class="trust-strip">
+          <div class="ti"><span class="ti-icon">&#10003;</span><div><div class="ti-name">Genuine NVIDIA</div><div class="ti-sub">Full manufacturer warranty</div></div></div>
+          <div class="ti"><span class="ti-icon">&#10003;</span><div><div class="ti-name">Expert Support</div><div class="ti-sub">WhatsApp &amp; email direct</div></div></div>
+          <div class="ti"><span class="ti-icon">&#10003;</span><div><div class="ti-name">Transparent Pricing</div><div class="ti-sub">No hidden markups</div></div></div>
+        </div>
       </div>
-      <div class="hero-visual">{HERO_SVG}</div>
+      <div class="hero-visual" id="hero-visual">
+        <img src="/static/img/hero-rack.jpg" alt="Enterprise NVIDIA GPU rack" width="1235" height="936">
+        <div class="hero3d-metric fade-in" id="hero3d-metric">
+          <div class="m-eyebrow"><span>&#9679;</span> GB300 NVL72 Spec</div>
+          <div class="hero3d-metric-num" id="hero3d-metric-num">0<small>GB/s</small></div>
+          <div class="hero3d-metric-lbl">NVLink Bandwidth</div>
+          <div class="m-grid">
+            <div><div class="m-val">{GB300['gpu_count']}</div><div class="m-lbl">GPUs</div></div>
+            <div><div class="m-val">{GB300['per_gpu_memory']} GB</div><div class="m-lbl">HBM3e per GPU</div></div>
+            <div><div class="m-val">{GB300['memory_gb']/1000:.1f} TB</div><div class="m-lbl">Total GPU Memory</div></div>
+            <div><div class="m-val">{GB300['power_w']/1000:.0f} kW</div><div class="m-lbl">Typical Power</div></div>
+          </div>
+        </div>
+      </div>
     </section>''')
+
+    # ── HERO METRIC COUNT-UP (fires once when the hero scrolls into view) ──
+    P.append('''
+    <script>
+    (function(){
+      var mount = document.getElementById('hero-visual');
+      if(!mount) return;
+      var numEl = document.getElementById('hero3d-metric-num');
+      var TARGET = 900;
+      var counted = false;
+      function countUp(){
+        if(counted) return; counted = true;
+        var start = null, dur = 1400;
+        function step(ts){
+          if(!start) start = ts;
+          var p = Math.min(1, (ts - start) / dur);
+          var eased = 1 - Math.pow(1 - p, 3);
+          numEl.textContent = Math.round(eased * TARGET);
+          if(p < 1) requestAnimationFrame(step); else numEl.textContent = TARGET;
+        }
+        requestAnimationFrame(step);
+      }
+      var metricObs = new IntersectionObserver(function(entries){
+        entries.forEach(function(e){
+          if(e.isIntersecting){ countUp(); metricObs.disconnect(); }
+        });
+      }, {threshold: 0.4});
+      metricObs.observe(mount);
+    })();
+    </script>''')
 
     # ── HOW WE SIZE YOUR AI SYSTEM ──
     P.append('''
@@ -621,14 +915,90 @@ def index():
       </div>
     </section>''')
 
-    # ── STATS BAR ──
+    # ── BUILD YOUR AI CLUSTER (interactive calculator) ──
+    calc_gpu = GPUS[0]  # NVIDIA H200 SXM5 — the flagship GPU we size against
+    default_params = MODELS[0]['params_b']
+    default_raw = min_vram_gb(default_params)
+    default_count = -(-default_raw // calc_gpu['memory_gb'])
+    calc_data = {
+        'models': [{'name': m['name'], 'params': m['params_b']} for m in MODELS],
+        'gpu': {'name': calc_gpu['name'], 'mem': calc_gpu['memory_gb'], 'price': calc_gpu['price'], 'power': calc_gpu['power_w']},
+        'builds': {bkey: b['path'] for bkey, b in BUILDS.items()},
+    }
     P.append(f'''
-    <section class="fade-in">
-      <div class="stats-bar">
-        <div class="stat-card"><div class="stat-num">8+</div><div class="stat-lbl">Enterprise GPUs</div></div>
-        <div class="stat-card"><div class="stat-num">{len(MODELS)}+</div><div class="stat-lbl">Models Supported</div></div>
-        <div class="stat-card"><div class="stat-num" style="font-size:1.1em">GB300 NVL72</div><div class="stat-lbl">Largest Configuration</div></div>
-        <div class="stat-card"><div class="stat-num" style="font-size:1.1em">900 GB/s</div><div class="stat-lbl">NVLink Bandwidth</div></div>
+    <section id="cluster-builder" class="fade-in">
+      <div class="calc-card">
+        <div>
+          <div class="calc-intro"><h3>Build Your AI Cluster</h3><span class="calc-tag">Interactive Calculator</span></div>
+          <p class="calc-desc">Select your model and preferences. We'll calculate the right hardware for your needs using the same formula shown throughout this site: parameters &times; 1 GB + 20% overhead.</p>
+          <div class="calc-field">
+            <label>Model Size (Parameters)</label>
+            <select id="calc-model">{''.join(f'<option value="{i}"{" selected" if i==0 else ""}>{m["name"]} ({m["params_b"]}B)</option>' for i, m in enumerate(MODELS))}</select>
+          </div>
+          <div class="calc-field">
+            <label>Precision</label>
+            <select id="calc-precision">
+              <option value="16" selected>FP16 (16-bit)</option>
+              <option value="4">4-bit Quantized (INT4)</option>
+            </select>
+          </div>
+          <div class="calc-field">
+            <label>Company Size</label>
+            <select id="calc-company">
+              <option value="small_startup">Small Startup</option>
+              <option value="mid_company" selected>Mid-size Company</option>
+              <option value="enterprise">Enterprise</option>
+            </select>
+          </div>
+        </div>
+        <div class="calc-results">
+          <div class="calc-row">
+            <div class="calc-stat"><div class="cs-lbl">Required GPU Memory</div><div class="cs-val" id="calc-req-mem">{default_raw} GB</div><div class="cs-sub">Minimum</div></div>
+            <div class="calc-stat"><div class="cs-lbl">Recommended GPU</div><div class="cs-val" id="calc-gpu-name">{calc_gpu['name'].replace('NVIDIA ', '')}</div><div class="cs-sub">{calc_gpu['memory_gb']} GB HBM3e</div></div>
+            <div class="calc-stat"><div class="cs-lbl">GPUs Needed</div><div class="cs-val" id="calc-gpu-count">{default_count}</div><div class="cs-sub">GPUs</div></div>
+            <div class="calc-stat"><div class="cs-lbl">Est. System Price</div><div class="cs-val" id="calc-price">${calc_gpu['price']*default_count:,}</div><div class="cs-sub">USD</div></div>
+          </div>
+          <div class="calc-row">
+            <div class="calc-stat"><div class="cs-lbl">Total GPU Memory</div><div class="cs-val" id="calc-total-mem">{calc_gpu['memory_gb']*default_count:,} GB</div></div>
+            <div class="calc-stat"><div class="cs-lbl">Est. Power Usage</div><div class="cs-val" id="calc-power">{calc_gpu['power_w']*default_count/1000:.1f} kW</div></div>
+            <div class="calc-stat"><div class="cs-lbl">Deployment Type</div><div class="cs-val" id="calc-deploy">AI Cluster</div></div>
+          </div>
+          <div class="calc-cta-row">
+            <a class="calc-cta" id="calc-cta" href="/quote?build=mid_company">Request This Configuration &rarr;</a>
+            <span class="calc-note">Pre-fills the quote form</span>
+          </div>
+        </div>
+      </div>
+    </section>
+    <script>var CALC_DATA = {json.dumps(calc_data)};</script>''')
+
+    # ── FEATURED NVIDIA HARDWARE (carousel) ──
+    pcards = []
+    for gpu in GPUS:
+        badge = ''
+        if gpu['badge_cls'] in ('bdg-popular', 'bdg-frontier'):
+            badge = f'<span class="pcard-badge">{gpu["badge_label"]}</span>'
+        pcards.append(f'''
+        <div class="pcard" data-search="{gpu['name'].lower()} {gpu['description'].lower()}">
+          {badge}
+          <div class="pcard-img">{SVG[gpu['type']]}</div>
+          <h4>{gpu['name']}</h4>
+          <div class="pcard-spec">{gpu['memory_gb']} GB &bull; {gpu['power_w']} W</div>
+          <div class="pcard-price">${gpu['price']:,}</div>
+        </div>''')
+    P.append(f'''
+    <section id="featured-hardware" class="fade-in">
+      <div class="carousel-head">
+        <div><div class="sec-label">Shop Hardware</div><div class="sec-title" style="margin-bottom:0">Featured NVIDIA Hardware</div></div>
+        <a class="view-all" href="#gpus">View all hardware &rarr;</a>
+      </div>
+      <div class="carousel-wrap">
+        <div class="carousel-track" id="pcard-track">{''.join(pcards)}</div>
+      </div>
+      <div class="carousel-controls">
+        <button class="carousel-nav" id="pcard-prev" aria-label="Previous">&#8592;</button>
+        <div class="carousel-dots" id="pcard-dots"></div>
+        <button class="carousel-nav" id="pcard-next" aria-label="Next">&#8594;</button>
       </div>
     </section>''')
 
@@ -639,7 +1009,7 @@ def index():
     )
     cases_html = ''.join(f'<li>{c}</li>' for c in GB300['use_cases'])
     P.append(f'''
-    <section class="fade-in">
+    <section id="gb300" class="fade-in">
       <div class="sec-label">Featured Enterprise Solution</div>
       <div class="featured-wrap">
         <div class="fe-rack">{GB300_RACK_SVG}</div>
@@ -687,7 +1057,7 @@ def index():
         icon_svg = SVG[gtype]
         wa_b = wa_card_btn()
         P.append(f'''
-        <div class="gpu-card">
+        <div class="gpu-card" data-search="{name.lower()} {desc.lower()} {bl.lower()}">
           <div class="gpu-icon">{icon_svg}</div>
           <span class="bdg {bc}">{bi} {bl}</span>
           <h3 style="color:var(--white);margin-bottom:4px">{name}</h3>
@@ -735,7 +1105,7 @@ def index():
           <div class="htc-arrow">&darr;</div>
           <div class="htc-gpu">NVIDIA H200 SXM5</div>
           <div class="htc-price">$44,000</div>
-          <div class="htc-note">Load Llama 405B on two cards. Train models up to 200B parameters. The current frontier GPU standard.</div>
+          <div class="htc-note">Run Falcon 180B at full precision, or DeepSeek-V2 236B 4-bit quantized. Train dense models up to ~200B parameters. The current frontier GPU standard.</div>
           <a class="btn-primary" href="/quote?build=enterprise" style="font-size:.82em;padding:9px 18px;margin-top:8px;align-self:flex-start">Explore &rarr;</a>
         </div>
         <div class="htc-card">
@@ -776,12 +1146,12 @@ def index():
         mdesc = model['description']
         muse = model['use_case']
         raw = mpb
-        total = round(raw * 1.2)
+        total = min_vram_gb(raw)
         h100c = -(-total // 80)
         h200c = -(-total // 141)
         wa_b = wa_card_btn()
         P.append(f'''
-        <div class="model-card">
+        <div class="model-card" data-search="{mname.lower()} {mdesc.lower()} {muse.lower()}">
           <h3 style="color:var(--white)">{mname}</h3>
           <p style="color:var(--muted);font-size:.87em">{mdesc}</p>
           <p style="color:var(--muted);font-size:.81em;margin-top:4px">Use case: {muse}</p>
@@ -858,11 +1228,11 @@ def index():
             <div class="mem-calc">
               <strong style="color:var(--muted)">Memory Calculation:</strong><br>
               236 B &times; 1 GB = 236 GB raw weight<br>
-              236 GB &times; 1.2 overhead = <span style="color:var(--text);font-weight:700">284 GB minimum VRAM</span>
+              236 GB &times; 1.2 overhead = <span style="color:var(--text);font-weight:700">283 GB minimum VRAM</span>
             </div>
             <div class="quant-build">
-              <strong>Example build:</strong> 2&times; H200 141 GB = 282 GB (just fits) or 4&times; H100<br>
-              <span style="color:var(--muted)">GPU cost: ~$88,000&ndash;$128,000</span>
+              <strong>Example build:</strong> 4&times; H100 80 GB = 320 GB or 3&times; H200 141 GB = 423 GB<br>
+              <span style="color:var(--muted)">GPU cost: ~$128,000&ndash;$132,000</span>
             </div>
           </div>
           <div class="quant-col quant-4bit">
@@ -1044,17 +1414,15 @@ def index():
       </div>
     </section>''')
 
-    # ── WHY CHOOSE ──
+    # ── WHY CHOOSE (dark bottom feature strip) ──
     P.append('''
     <section id="why" class="fade-in">
-      <div class="sec-label">Our Advantages</div>
-      <div class="sec-title">Why Choose Maria's AI Hardware Store?</div>
-      <div class="why-grid">
-        <div class="why-card"><div class="why-icon">&#129504;</div><h4>Honest Recommendations</h4><p>We tell you what you actually need — not the most expensive option in the catalog.</p></div>
-        <div class="why-card"><div class="why-icon">&#128200;</div><h4>Real Hardware Numbers</h4><p>Real VRAM, real power draw, real prices. No marketing ranges or "up to" specs.</p></div>
-        <div class="why-card"><div class="why-icon">&#129518;</div><h4>Clear Memory Math</h4><p>We show the exact VRAM formula for every major open-source model, so you buy right the first time.</p></div>
-        <div class="why-card"><div class="why-icon">&#128203;</div><h4>Enterprise Quote Support</h4><p>Custom quotes for multi-node clusters, full rack deployments, and volume GPU orders.</p></div>
-        <div class="why-card"><div class="why-icon">&#128241;</div><h4>WhatsApp Consultation</h4><p>Text Maria directly. Get a real answer in minutes — not a calendar booking link.</p></div>
+      <div class="feature-strip">
+        <div class="fs-item"><span class="fs-icon">&#129504;</span><div><h4>Honest Recommendations</h4><p>What you actually need — not the most expensive option in the catalog.</p></div></div>
+        <div class="fs-item"><span class="fs-icon">&#128200;</span><div><h4>Real Hardware Numbers</h4><p>Real VRAM, power draw, and prices. No marketing ranges or "up to" specs.</p></div></div>
+        <div class="fs-item"><span class="fs-icon">&#129518;</span><div><h4>Clear Memory Math</h4><p>The exact VRAM formula for every major open-source model.</p></div></div>
+        <div class="fs-item"><span class="fs-icon">&#128203;</span><div><h4>Enterprise Quote Support</h4><p>Custom quotes for multi-node clusters and full rack deployments.</p></div></div>
+        <div class="fs-item"><span class="fs-icon">&#128241;</span><div><h4>WhatsApp Consultation</h4><p>Text Maria directly. A real answer in minutes.</p></div></div>
       </div>
     </section>''')
 
@@ -1095,31 +1463,48 @@ def index():
 @app.route('/quote', methods=['GET', 'POST'])
 def quote():
     preselect = request.args.get('build', '')
-    success = False
+    success = request.args.get('success') == '1'
+    error = None
+    form_name = ''
+    form_contact = ''
+
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
         contact = request.form.get('contact', '').strip()
         selected_build = request.form.get('selected_build', '').strip()
-        if name and contact and selected_build:
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO quote_requests (name, contact, selected_build) VALUES (%s, %s, %s)",
-                (name, contact, selected_build)
-            )
-            conn.commit()
-            cur.close()
-            conn.close()
-            success = True
+        form_name, form_contact = name, contact
+
+        if not (name and contact and selected_build):
+            error = "Please fill in your name, contact info, and a configuration."
+        elif selected_build not in VALID_BUILD_NAMES:
+            # selected_build is client-supplied — never trust it blindly before insert
+            error = "Please choose a valid configuration from the list."
+        else:
+            try:
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO quote_requests (name, contact, selected_build) VALUES (%s, %s, %s)",
+                    (name, contact, selected_build)
+                )
+                conn.commit()
+                cur.close()
+                conn.close()
+                # Post/Redirect/Get: prevents a page refresh from re-submitting the form
+                return redirect(url_for('quote', success=1))
+            except Exception:
+                error = "Something went wrong saving your request. Please try again, or contact us directly on WhatsApp."
 
     P = [HTML_BASE, '<main style="padding-top:36px">']
     P.append('<div class="sec-label">Get Started</div>')
     P.append('<h2 style="color:var(--white);font-size:1.85em;margin-bottom:22px">Request a Quote</h2>')
     if success:
         P.append('<div class="form-success">&#10003; Your quote request has been saved to our database. Maria will be in touch shortly.</div>')
+    if error:
+        P.append(f'<div class="form-error">&#9888; {error}</div>')
     P.append('<form method="POST"><div class="form-wrap">')
-    P.append('<label>Your Name</label><input type="text" name="name" required placeholder="Jane Smith">')
-    P.append('<label>Email or WhatsApp Number</label><input type="text" name="contact" required placeholder="jane@company.com or +1 555 0100">')
+    P.append(f'<label>Your Name</label><input type="text" name="name" required placeholder="Jane Smith" value="{html.escape(form_name)}">')
+    P.append(f'<label>Email or WhatsApp Number</label><input type="text" name="contact" required placeholder="jane@company.com or +1 555 0100" value="{html.escape(form_contact)}">')
     P.append('<label>Select a Configuration</label><select name="selected_build" required>')
     P.append('<option value="">-- Choose a configuration --</option>')
     for bkey, build in BUILDS.items():
@@ -1130,7 +1515,7 @@ def quote():
         total = gpu['price'] * count
         gname = gpu['name']
         P.append(f'<option value="{bname}" {sel}>{bname} — ${total:,} ({count}x {gname})</option>')
-    P.append('<option value="GB300 NVL72 Rack — Enterprise Custom">GB300 NVL72 Rack — Enterprise Custom Quote</option>')
+    P.append(f'<option value="{GB300_QUOTE_OPTION}">{GB300_QUOTE_OPTION} Quote</option>')
     P.append('</select>')
     P.append('<button type="submit">Submit Quote Request</button>')
     P.append('</div></form>')
@@ -1158,9 +1543,9 @@ def requests_list():
         P.append('<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Name</th><th>Contact</th><th>Selected Build</th><th>Submitted</th></tr></thead><tbody>')
         for row in rows:
             rid = row['id']
-            rname = row['name']
-            rcontact = row['contact']
-            rbuild = row['selected_build']
+            rname = html.escape(row['name'])
+            rcontact = html.escape(row['contact'])
+            rbuild = html.escape(row['selected_build'])
             rtime = row['created_at'].strftime('%Y-%m-%d %H:%M UTC')
             P.append(f'<tr><td class="req-id">#{rid}</td><td>{rname}</td><td>{rcontact}</td><td>{rbuild}</td><td style="color:var(--muted);font-size:.84em">{rtime}</td></tr>')
         P.append('</tbody></table></div>')
